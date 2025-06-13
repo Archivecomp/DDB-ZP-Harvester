@@ -18,7 +18,7 @@ OUTPUT_FILE = "output/all_data.ttl"
 os.makedirs(TTL_DIR, exist_ok=True)
 os.makedirs("output", exist_ok=True)
 DELETE_TEMP_TTL = True
-MAX_CHUNKS = 20  # maximale Anzahl JSON-Chunks für Testzwecke festlegen
+MAX_CHUNKS = 60  # maximale Anzahl JSON-Chunks für Testzwecke festlegen
 
 # ==== Mapping ==== #
 LANGUAGE_MAP = {
@@ -29,30 +29,6 @@ LANGUAGE_MAP = {
     "spa": "es"
 }
 
-PROVIDER_MAP = {
-    "VKNQFFAKOR4XZWJJKUX3NGYSZ3QZAXCW": "n4c:E2295",
-    "NEOOVZ6BJZD3LYNKU3N7PFT6VD54SMMG": "",
-    "VNHXUCEEKHOUSYH4NVOUBHJGSRMOGK7J": "",
-    "6GFV3I4ELFEEFQIN2WECOXMTI5FUWHCK": "n4c:E2031",
-    "INLVDM4I3AMZLTG6AE6C5GZRJKGOF75K": "",
-    "BZVTR553HLJBDMQD5NCJ6YKP3HMBQRF4": "",
-    "265BI7NE7QBS4NQMZCCGIVLFR73OCOSL": "n4c:E1841",
-    "Q5Q6S6XOPTGP3BUM4I2JNP7V53BAWOTT": "n4c:E1980",
-    "4EV676FQPACNVNHFEJHGKUY55BXC3QMB": "",
-    "7M6B7VD3Y42GLVM75OGK3VNK62VU4OGF": "",
-    "A5MCTVQDBFJTFJDZRTIZX5W6YKSHWOVC": "",
-    "CZTZO4SBNHW34JVKYRWW67725WWGLZA5": "",
-    "RMHO6ZMQPXRNLKEUNW3VG2B563ALDO5S": "",
-    "NWNEPSPSGSSYWU3IP75BYGGBRNQORN6A": "",
-    "4VUN5X2CVCEDV63QYFG6ZSJ4NUNTQWHB": "",
-    "56EXT7QNQMRDQY4ZZWQGOLXGR3IN3C4F": "",
-    "ZVFWDOJAROVAMTFCAFPSEAXTMRBD35RE": "",
-    "VXSBME756Q77YO6NJWC5QFZ6D4VLVWG3": "",
-    "3HK6MSZN45JDHFPFYSN2Z476QKJPJSRA": "n4c:E1979",
-    "UPHR66ECKLOQBHTW23IVD2SE4UBEF2XY": "",
-    "UJVQP2TIF4YVCCJQXWZ2BNEECO7ZHYTW": "",
-    "ZS4SLW4XQJ6WDOGVMGMCOBHICZV7CKBX": ""
-}
 # ==== Hilfsfunktion zum Erzeugen eines TTL-DatafeedElements ==== #
 def make_ttl_entry(doc):
     id_ = doc.get("id")
@@ -60,8 +36,7 @@ def make_ttl_entry(doc):
     pub_date = doc.get("publication_date", "1900-01-01T00:00:00Z")[:10]
     lang_code_raw = doc.get("language", ["und"])[0]
     language = LANGUAGE_MAP.get(lang_code_raw, lang_code_raw)
-    provider_id_raw = doc.get("provider_ddb_id")
-    provider_id = PROVIDER_MAP.get(provider_id_raw, provider_id_raw)
+    provider_id = doc.get("provider_ddb_id")
 
     # Ort(e) extrahieren
     places = doc.get("place_of_distribution", [])
@@ -77,7 +52,7 @@ def make_ttl_entry(doc):
     schema:url <https://www.deutsche-digitale-bibliothek.de/newspaper/item/{id_}> ;
     nfdicore:license <https://creativecommons.org/publicdomain/zero/1.0/> ;
     nfdicore:publisher n4c:E1883 ;
-    schema:provider {provider_id} ;
+    schema:sourceOrganization {provider_id} ;
     cto:creationDate "{pub_date}"^^xsd:date ;
     cto:elementOf n4c:E6349 ;
     cto:elementType <http://vocab.getty.edu/page/aat/300026656> ;
