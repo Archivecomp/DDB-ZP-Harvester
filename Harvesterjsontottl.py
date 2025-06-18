@@ -6,7 +6,7 @@ import time
 import os
 from datetime import datetime
 
-# ==== Settings ==== #
+# ==== Configuration ==== #
 API_URL = "https://api.deutsche-digitale-bibliothek.de/search/index/newspaper-issues/select"
 
 TTL_DIR = "ttl_chunks"
