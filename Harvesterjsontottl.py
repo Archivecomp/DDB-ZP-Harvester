@@ -19,6 +19,7 @@ Rows = 1000 # number of records per chunk
 MAX_CHUNKS = 6 # max count of chunks mostly for testing purposes
 STATE_FILE = "state.json" # state file incase an error occurs
 DELETE_STATE = True # deleting state file after successful run
+MAX_CONSECUTIVE_ERRORS = 10
 QUERY_PARAMS = {
     "q": "type:issue",
     "rows": {Rows},
@@ -103,6 +104,7 @@ else:
     all_ids = []
 
 seen_cursors = set()
+consecutive_error_count = 0
 
 while True:
     if chunk_index >= MAX_CHUNKS:
@@ -135,16 +137,40 @@ while True:
                     time.sleep(0.2)  # giving api a pause
             except json.JSONDecodeError:
                 print(f"Failed to decode JSON from {API_URL}.")
-                break
+                consecutive_error_count += 1
+                if consecutive_error_count >= MAX_CONSECUTIVE_ERRORS:
+                    print(f"Max consecutive errors ({MAX_CONSECUTIVE_ERRORS}) reached. Exiting.")
+                    break
+                else:
+                    print(f"Retrying... ({consecutive_error_count}/{MAX_CONSECUTIVE_ERRORS})")
+                    continue
         else:
             print(f"Failed to fetch data from {API_URL}. Status Code: {response.status_code}")
-            continue
+            consecutive_error_count += 1
+            if consecutive_error_count >= MAX_CONSECUTIVE_ERRORS:
+                print(f"Max consecutive errors ({MAX_CONSECUTIVE_ERRORS}) reached. Exiting.")
+                break
+            else:
+                print(f"Retrying... ({consecutive_error_count}/{MAX_CONSECUTIVE_ERRORS})")
+                continue
     except http.client.RemoteDisconnected as e:
         print(f"Error: {e}. Trying again from chunk {chunk_index}.")
-        continue
+        consecutive_error_count += 1
+        if consecutive_error_count >= MAX_CONSECUTIVE_ERRORS:
+            print(f"Max consecutive errors ({MAX_CONSECUTIVE_ERRORS}) reached. Exiting.")
+            break
+        else:
+            print(f"Retrying... ({consecutive_error_count}/{MAX_CONSECUTIVE_ERRORS})")
+            continue
     except requests.RequestException as e:
         print(f"Request failed for {API_URL}: {e}")
-        continue
+        consecutive_error_count += 1
+        if consecutive_error_count >= MAX_CONSECUTIVE_ERRORS:
+            print(f"Max consecutive errors ({MAX_CONSECUTIVE_ERRORS}) reached. Exiting.")
+            break
+        else:
+            print(f"Retrying... ({consecutive_error_count}/{MAX_CONSECUTIVE_ERRORS})")
+            continue
     except Exception as e:
         print(f"Unknown Error: {e}. Exiting the script.")
         break
@@ -155,6 +181,7 @@ json_and_ttl_duration = time.time() - json_and_ttl_start
 merge_start = time.time()
 print("\n Combining all ttl chunks...")
 
+# Build Header
 prefixes = """@prefix cto: <https://nfdi4culture.de/ontology#> .
 @prefix n4c: <https://nfdi4culture.de/id/> .
 @prefix nfdicore: <https://nfdi.fiz-karlsruhe.de/ontology#> .
