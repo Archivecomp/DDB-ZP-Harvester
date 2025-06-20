@@ -10,13 +10,15 @@ from datetime import datetime
 API_URL = "https://api.deutsche-digitale-bibliothek.de/search/index/newspaper-issues/select"
 
 TTL_DIR = "ttl_chunks"
+OUTPUT_DIR = "output"
 OUTPUT_FILE = "output/all_data.ttl"
 os.makedirs(TTL_DIR, exist_ok=True)
-os.makedirs("output", exist_ok=True)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 DELETE_TEMP_TTL = True
-Rows = 10000 # number of records per chunk
-MAX_CHUNKS = 3 # max count of chunks mostly for testing purposes
+Rows = 1000 # number of records per chunk
+MAX_CHUNKS = 6 # max count of chunks mostly for testing purposes
 STATE_FILE = "state.json" # state file incase an error occurs
+DELETE_STATE = True # deleting state file after successful run
 QUERY_PARAMS = {
     "q": "type:issue",
     "rows": {Rows},
@@ -101,7 +103,6 @@ else:
     all_ids = []
 
 seen_cursors = set()
-ttl_chunk_paths = []
 
 while True:
     if chunk_index >= MAX_CHUNKS:
@@ -126,7 +127,6 @@ while True:
                         f.write(ttl_entry + "\n\n")
                         all_ids.append(doc.get("id"))
                 print(f"TTL written: {ttl_chunk_path} ({len(docs)} Records)")
-                ttl_chunk_paths.append(ttl_chunk_path)
                 seen_cursors.add(cursor)
                 params["cursorMark"] = cursor
                 chunk_index += 1
@@ -138,7 +138,7 @@ while True:
                 break
         else:
             print(f"Failed to fetch data from {API_URL}. Status Code: {response.status_code}")
-            break
+            continue
     except http.client.RemoteDisconnected as e:
         print(f"Error: {e}. Trying again from chunk {chunk_index}.")
         continue
@@ -164,9 +164,12 @@ prefixes = """@prefix cto: <https://nfdi4culture.de/ontology#> .
 
 all_ttl = [prefixes]
 
-for path in ttl_chunk_paths:
-    with open(path, "r", encoding="utf-8") as f:
-        all_ttl.append(f.read())
+for filename in os.listdir(TTL_DIR):
+    if filename.startswith("ttl_chunk_") and filename.endswith(".ttl"):
+        filepath = os.path.join(TTL_DIR, filename)
+        with open(filepath, "r", encoding="utf-8") as f:
+            all_ttl.append(f.read())
+
 
 # Build closing block
 today = datetime.now().strftime("%Y-%m-%d")
@@ -189,12 +192,15 @@ print(f"Combined: {OUTPUT_FILE}")
 
 # ==== Deleting ttl chunks (optional) ==== #
 if DELETE_TEMP_TTL:
-    for path in ttl_chunk_paths:
-        try:
-            os.remove(path)
-            print(f"Deleted: {path}")
-        except Exception as e:
-            print(f"An Error occurred while deleting {path}: {e}")
+    # Lösche alle TTL-Dateien im TTL_DIR-Verzeichnis
+    for filename in os.listdir(TTL_DIR):
+        if filename.startswith("ttl_chunk_") and filename.endswith(".ttl"):
+            filepath = os.path.join(TTL_DIR, filename)
+            try:
+                os.remove(filepath)
+                print(f"Deleted: {filepath}")
+            except Exception as e:
+                print(f"An Error occurred while deleting {filepath}: {e}")
 else:
     print("\nTemporary files were kept (DELETE_TEMP_FILES = False).")
 
@@ -208,7 +214,11 @@ print(f"TTL-Combining:           {merge_duration:.2f} Sekunden")
 print(f"Total time:      {total_duration:.2f} Sekunden")
 
 # Removes the state file after successful execution
-try:
-    os.remove(STATE_FILE)
-except Exception as e:
-    print(f"Error when deleting the status file: {e}")
+if DELETE_STATE:
+    try:
+        os.remove(STATE_FILE)
+        print(f"Deleted: {STATE_FILE}")
+    except Exception as e:
+        print(f"Error when deleting the status file: {e}")
+else:
+    print("\nState file not deleted.")
