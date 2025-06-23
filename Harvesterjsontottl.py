@@ -9,16 +9,19 @@ from datetime import datetime
 # ==== Configuration ==== #
 API_URL = "https://api.deutsche-digitale-bibliothek.de/search/index/newspaper-issues/select"
 
+JSON_DIR = "json_chunks"
 TTL_DIR = "ttl_chunks"
 OUTPUT_DIR = "output"
 OUTPUT_FILE = "output/all_data.ttl"
+os.makedirs(JSON_DIR, exist_ok=True)
 os.makedirs(TTL_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-DELETE_TEMP_TTL = True
-Rows = 1000 # number of records per chunk
-MAX_CHUNKS = 6 # max count of chunks mostly for testing purposes
+DELETE_TEMP_TTL = False
+Rows = 1000 # number of records per chunk (there are 4.142.704 records so max chunk should be 4.143 for a complete run)
+MAX_CHUNKS = 3 # max count of chunks mostly for testing purposes
 STATE_FILE = "state.json" # state file incase an error occurs
 DELETE_STATE = True # deleting state file after successful run
+GENERATE_TTL = True
 MAX_CONSECUTIVE_ERRORS = 10
 QUERY_PARAMS = {
     "q": "type:issue",
@@ -88,8 +91,8 @@ def load_state():
 overall_start = time.time()
 json_and_ttl_start = time.time()
 
-# ==== Processing: Load JSON → save directly to TTL ==== #
-print("Start JSON retrieval and direct TTL generation...")
+# ==== Processing: Load JSON → optional save to TTL ==== #
+print("Start JSON retrieval and optional TTL generation...")
 # Load the state if available
 state = load_state()
 if state:
@@ -121,14 +124,18 @@ while True:
                 if not docs or cursor in seen_cursors:
                     print("Call-of completed.")
                     break
-                # TTL-Datei für diesen Chunk direkt schreiben
-                ttl_chunk_path = f"{TTL_DIR}/ttl_chunk_{chunk_index}.ttl"
-                with open(ttl_chunk_path, "w", encoding="utf-8") as f:
-                    for doc in docs:
-                        ttl_entry = make_ttl_entry(doc)
-                        f.write(ttl_entry + "\n\n")
-                        all_ids.append(doc.get("id"))
-                print(f"TTL written: {ttl_chunk_path} ({len(docs)} Records)")
+                json_chunks_path = f"{JSON_DIR}/data_chunk_{chunk_index}.json"
+                with open(json_chunks_path, "w", encoding="utf-8") as f:
+                    json.dump( data, f, indent=4)
+                print(f"JSON written: {json_chunks_path} ({len(docs)} Records)")
+                if GENERATE_TTL:
+                    ttl_chunk_path = f"{TTL_DIR}/ttl_chunk_{chunk_index}.ttl"
+                    with open(ttl_chunk_path, "w", encoding="utf-8") as f:
+                        for doc in docs:
+                            ttl_entry = make_ttl_entry(doc)
+                            f.write(ttl_entry + "\n\n")
+                            all_ids.append(doc.get("id"))
+                    print(f"TTL written: {ttl_chunk_path} ({len(docs)} Records)")
                 seen_cursors.add(cursor)
                 params["cursorMark"] = cursor
                 chunk_index += 1
@@ -178,44 +185,46 @@ while True:
 json_and_ttl_duration = time.time() - json_and_ttl_start
 
 # ==== Combining ttl files ==== #
-merge_start = time.time()
-print("\n Combining all ttl chunks...")
+if GENERATE_TTL:
+    merge_start = time.time()
+    print("\n Combining all ttl chunks...")
 
-# Build Header
-prefixes = """@prefix cto: <https://nfdi4culture.de/ontology#> .
-@prefix n4c: <https://nfdi4culture.de/id/> .
-@prefix nfdicore: <https://nfdi.fiz-karlsruhe.de/ontology#> .
-@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix schema: <http://schema.org/> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n"""
+    # Build Header
+    prefixes = """@prefix cto: <https://nfdi4culture.de/ontology#> .
+    @prefix n4c: <https://nfdi4culture.de/id/> .
+    @prefix nfdicore: <https://nfdi.fiz-karlsruhe.de/ontology#> .
+    @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+    @prefix schema: <http://schema.org/> .
+    @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n"""
 
-all_ttl = [prefixes]
+    all_ttl = [prefixes]
 
-for filename in os.listdir(TTL_DIR):
-    if filename.startswith("ttl_chunk_") and filename.endswith(".ttl"):
-        filepath = os.path.join(TTL_DIR, filename)
+    ttl_file_paths = sorted(
+        [os.path.join(TTL_DIR, f) for f in os.listdir(TTL_DIR) if f.startswith("ttl_chunk_") and f.endswith(".ttl")])
+    for filepath in ttl_file_paths:
         with open(filepath, "r", encoding="utf-8") as f:
             all_ttl.append(f.read())
 
 
-# Build closing block
-today = datetime.now().strftime("%Y-%m-%d")
-datafeed_items = ",\n        ".join([
-    f"""[ a schema:DataFeedItem ;
-            schema:item <https://www.deutsche-digitale-bibliothek.de/newspaper/item/{id_}> ]"""
-    for id_ in all_ids
-])
-footer = f"""
-n4c:E6349 a schema:DataFeed ;
-    schema:dataFeedElement {datafeed_items} ;
-    schema:dataModified "{today}"^^xsd:date .
-""".strip()
+    # Build closing block
+    today = datetime.now().strftime("%Y-%m-%d")
+    datafeed_items = ",\n        ".join([
+        f"""[ a schema:DataFeedItem ;
+                schema:item <https://www.deutsche-digitale-bibliothek.de/newspaper/item/{id_}> ]"""
+        for id_ in all_ids
+    ])
+    footer = f"""
+    n4c:E6349 a schema:DataFeed ;
+        schema:dataFeedElement {datafeed_items} ;
+        schema:dataModified "{today}"^^xsd:date .
+    """.strip()
 
-all_ttl.append(footer)
+    all_ttl.append(footer)
 
-with open(OUTPUT_FILE, "w", encoding="utf-8") as out:
-    out.write("\n\n".join(all_ttl))
-print(f"Combined: {OUTPUT_FILE}")
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as out:
+        out.write("\n\n".join(all_ttl))
+    print(f"Combined: {OUTPUT_FILE}")
+    merge_duration = time.time() - merge_start
 
 # ==== Deleting ttl chunks (optional) ==== #
 if DELETE_TEMP_TTL:
@@ -231,13 +240,15 @@ if DELETE_TEMP_TTL:
 else:
     print("\nTemporary files were kept (DELETE_TEMP_FILES = False).")
 
-merge_duration = time.time() - merge_start
+
+
 total_duration = time.time() - overall_start
 
 # ==== Displaying results ==== #
 print("\n️Time stats:")
-print(f"JSON-Download + TTL-Generation: {json_and_ttl_duration:.2f} Sekunden")
-print(f"TTL-Combining:           {merge_duration:.2f} Sekunden")
+print(f"JSON-Download (+ TTL-Generation): {json_and_ttl_duration:.2f} Sekunden")
+if GENERATE_TTL:
+    print(f"TTL-Combining:           {merge_duration:.2f} Sekunden")
 print(f"Total time:      {total_duration:.2f} Sekunden")
 
 # Removes the state file after successful execution
