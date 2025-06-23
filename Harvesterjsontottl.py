@@ -99,7 +99,7 @@ else:
     start = 0
     all_ids = []
 
-API_URL = f"https://api.deutsche-digitale-bibliothek.de/search/index/newspaper-issues/select?q=type:issue&rows={Rows}&start={start}"
+
 consecutive_error_count = 0
 
 while True:
@@ -108,6 +108,7 @@ while True:
         break
     session = requests.session()
     try:
+        API_URL = f"https://api.deutsche-digitale-bibliothek.de/search/index/newspaper-issues/select?q=type:issue&rows={Rows}&start={start}"
         response = session.get(API_URL, timeout=60*10)
         if response.status_code == 200:
             try:
