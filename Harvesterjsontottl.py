@@ -126,7 +126,7 @@ while True:
                     break
                 json_chunks_path = f"{JSON_DIR}/data_chunk_{chunk_index}.json"
                 with open(json_chunks_path, "w", encoding="utf-8") as f:
-                    json.dump( data, f, indent=4)
+                    json.dump(data, f, indent=4)
                 print(f"JSON written: {json_chunks_path} ({len(docs)} Records)")
                 if GENERATE_TTL:
                     ttl_chunk_path = f"{TTL_DIR}/ttl_chunk_{chunk_index}.ttl"
