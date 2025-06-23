@@ -7,7 +7,6 @@ import os
 from datetime import datetime
 
 # ==== Configuration ==== #
-API_URL = "https://api.deutsche-digitale-bibliothek.de/search/index/newspaper-issues/select"
 
 JSON_DIR = "json_chunks"
 TTL_DIR = "ttl_chunks"
@@ -17,18 +16,13 @@ os.makedirs(JSON_DIR, exist_ok=True)
 os.makedirs(TTL_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 DELETE_TEMP_TTL = False
-Rows = 1000 # number of records per chunk (there are 4.142.704 records so max chunk should be 4.143 for a complete run)
-MAX_CHUNKS = 3 # max count of chunks mostly for testing purposes
+Rows = 1000000 # number of records per chunk
+MAX_CHUNKS = 5 # max count of chunks mostly for testing purposes
 STATE_FILE = "state.json" # state file incase an error occurs
 DELETE_STATE = True # deleting state file after successful run
 GENERATE_TTL = True
 MAX_CONSECUTIVE_ERRORS = 10
-QUERY_PARAMS = {
-    "q": "type:issue",
-    "rows": {Rows},
-    "sort": "id ASC",
-    "cursorMark": "*",
-}
+
 
 # ==== Mapping ==== #
 LANGUAGE_MAP = {
@@ -71,10 +65,10 @@ def make_ttl_entry(doc):
 """.strip()
 
 # ==== Auxiliary function for saving the status ==== #
-def save_state(chunk_index, cursor, all_ids):
+def save_state(idx, start, all_ids):
     state = {
-        "chunk_index": chunk_index,
-        "cursor": cursor,
+        "idx": idx,
+        "start": start,
         "all_ids": all_ids
     }
     with open(STATE_FILE, "w", encoding="utf-8") as f:
@@ -96,50 +90,48 @@ print("Start JSON retrieval and optional TTL generation...")
 # Load the state if available
 state = load_state()
 if state:
-    chunk_index = state["chunk_index"]
-    params = QUERY_PARAMS.copy()
-    params["cursorMark"] = state["cursor"]
+    idx = state["idx"]
+    start = state["start"]
     all_ids = state["all_ids"]
-    print(f"State loaded: Chunk Index={chunk_index}, Cursor={params['cursorMark']}")
+    print(f"State loaded: Index={idx}, Start={start}")
 else:
-    chunk_index = 0
-    params = QUERY_PARAMS.copy()
+    idx = 0
+    start = 0
     all_ids = []
 
-seen_cursors = set()
 consecutive_error_count = 0
 
 while True:
-    if chunk_index >= MAX_CHUNKS:
+    if idx >= MAX_CHUNKS:
         print("Maximum number of chunks reached.")
         break
     session = requests.session()
     try:
-        response = session.get(API_URL, params=params)
+        API_URL = f"https://api.deutsche-digitale-bibliothek.de/search/index/newspaper-issues/select?q=type:issue&rows={Rows}&start={start}"
+        response = session.get(API_URL, timeout=60*10)
         if response.status_code == 200:
             try:
                 data = response.json()
                 docs = data.get("response", {}).get("docs", [])
                 cursor = data.get("nextCursorMark")
-                if not docs or cursor in seen_cursors:
+                if not docs:
                     print("Call-of completed.")
                     break
-                json_chunks_path = f"{JSON_DIR}/data_chunk_{chunk_index}.json"
+                json_chunks_path = f"{JSON_DIR}/data_chunk_{idx}.json"
                 with open(json_chunks_path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=4)
                 print(f"JSON written: {json_chunks_path} ({len(docs)} Records)")
                 if GENERATE_TTL:
-                    ttl_chunk_path = f"{TTL_DIR}/ttl_chunk_{chunk_index}.ttl"
+                    ttl_chunk_path = f"{TTL_DIR}/ttl_chunk_{idx}.ttl"
                     with open(ttl_chunk_path, "w", encoding="utf-8") as f:
                         for doc in docs:
                             ttl_entry = make_ttl_entry(doc)
                             f.write(ttl_entry + "\n\n")
                             all_ids.append(doc.get("id"))
                     print(f"TTL written: {ttl_chunk_path} ({len(docs)} Records)")
-                seen_cursors.add(cursor)
-                params["cursorMark"] = cursor
-                chunk_index += 1
-                save_state(chunk_index, cursor, all_ids)  # saving state
+                start += len(docs)
+                idx += 1
+                save_state(idx, start, all_ids)  # saving state
                 if response.elapsed.total_seconds() > 1.5:
                     time.sleep(0.2)  # giving api a pause
             except json.JSONDecodeError:
@@ -161,7 +153,7 @@ while True:
                 print(f"Retrying... ({consecutive_error_count}/{MAX_CONSECUTIVE_ERRORS})")
                 continue
     except http.client.RemoteDisconnected as e:
-        print(f"Error: {e}. Trying again from chunk {chunk_index}.")
+        print(f"Error: {e}. Trying again from chunk {idx}.")
         consecutive_error_count += 1
         if consecutive_error_count >= MAX_CONSECUTIVE_ERRORS:
             print(f"Max consecutive errors ({MAX_CONSECUTIVE_ERRORS}) reached. Exiting.")
@@ -191,11 +183,11 @@ if GENERATE_TTL:
 
     # Build Header
     prefixes = """@prefix cto: <https://nfdi4culture.de/ontology#> .
-    @prefix n4c: <https://nfdi4culture.de/id/> .
-    @prefix nfdicore: <https://nfdi.fiz-karlsruhe.de/ontology#> .
-    @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-    @prefix schema: <http://schema.org/> .
-    @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n"""
+@prefix n4c: <https://nfdi4culture.de/id/> .
+@prefix nfdicore: <https://nfdi.fiz-karlsruhe.de/ontology#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix schema: <http://schema.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n"""
 
     all_ttl = [prefixes]
 
