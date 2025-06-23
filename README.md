@@ -8,7 +8,6 @@ This script retrieves data from the Deutsche Digitale Bibliothek API and convert
 
 The configuration parameters can be adjusted at the beginning of the script:
 
-* **`API_URL`**: The URL of the API endpoint.
 * **`JSON_DIR`**: The directory where raw JSON response files will be stored.
 * **`TTL_DIR`**: The directory where temporary TTL files will be stored.
 * **`OUTPUT_DIR`**: The directory where the output file with the combined TTL data will be stored.
@@ -20,7 +19,6 @@ The configuration parameters can be adjusted at the beginning of the script:
 * **`DELETE_STATE`**: Specifies whether the state file should be deleted after successful execution.
 * **`GENERATE_TTL`**: Enables or disables the generation of TTL files.
 * **`MAX_CONSECUTIVE_ERRORS`**: The maximum number of consecutive errors allowed before exiting the script.
-* **`QUERY_PARAMS`**: The parameters for the API request.
 
 ## Workflow
 
