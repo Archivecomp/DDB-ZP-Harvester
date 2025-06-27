@@ -56,11 +56,12 @@ def make_ttl_entry(doc, graph):
     graph.add((item_uri, RDF.type, CTO.DatafeedElement))
     graph.add((item_uri, RDF.type, CTO.Item))
     graph.add((item_uri, RDFS.label, Literal(title, lang="de")))
-    graph.add((item_uri, SCHEMA.url, URIRef(f"https://www.deutsche-digitale-bibliothek.de/newspaper/item/{id_}")))
+    graph.add((item_uri, SCHEMA.url, Literal(f"https://www.deutsche-digitale-bibliothek.de/newspaper/item/{id_}", datatype = SCHEMA.URL)))
     graph.add((item_uri, NFDICORE.license, URIRef("https://creativecommons.org/publicdomain/zero/1.0/")))
     graph.add((item_uri, NFDICORE.publisher, N4C["E1883"]))
     graph.add((item_uri, SCHEMA.sourceOrganization,
                URIRef(f"https://www.deutsche-digitale-bibliothek.de/organization/{provider_id}")))
+    graph.add(( URIRef(f"https://www.deutsche-digitale-bibliothek.de/organization/{provider_id}"), RDF.type, NFDICORE.Organization))
     graph.add((item_uri, CTO.creationDate, Literal(pub_date, datatype=XSD.date)))
     graph.add((item_uri, CTO.elementOf, N4C["E6349"]))
     graph.add((item_uri, CTO.elementType, URIRef("http://vocab.getty.edu/page/aat/300026656")))
