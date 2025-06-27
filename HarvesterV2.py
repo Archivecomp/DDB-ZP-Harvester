@@ -16,7 +16,7 @@ os.makedirs(JSON_DIR, exist_ok=True)
 os.makedirs(TTL_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 DELETE_TEMP_TTL = True
-Rows = 5 # number of records per chunk
+Rows = 100 # number of records per chunk
 MAX_CHUNKS = 1 # max count of chunks mostly for testing purposes
 STATE_FILE = "state.json" # state file incase an error occurs
 DELETE_STATE = True # deleting state file after successful run
@@ -64,9 +64,9 @@ def make_ttl_entry(doc, graph):
     graph.add((item_uri, CTO.creationDate, Literal(pub_date, datatype=XSD.date)))
     graph.add((item_uri, CTO.elementOf, N4C["E6349"]))
     graph.add((item_uri, CTO.elementType, URIRef("http://vocab.getty.edu/page/aat/300026656")))
-    for place in places:
-        graph.add((item_uri, CTO.relatedLocationLiteral, Literal(place)))
-    graph.add((item_uri, SCHEMA.inLanguage, Literal(language)))
+    #for place in places:
+    #    graph.add((item_uri, CTO.relatedLocationLiteral, Literal(place)))
+    #graph.add((item_uri, SCHEMA.inLanguage, Literal(language)))
 
 # ==== Auxiliary function for saving the status ==== #
 def save_state(idx, start, all_ids):
@@ -196,7 +196,7 @@ if GENERATE_TTL:
     combined_graph.bind("n4c", N4C)
     combined_graph.bind("nfdicore", NFDICORE)
     combined_graph.bind("rdfs", RDFS)
-    combined_graph.bind("schema", SCHEMA)
+    combined_graph.bind("schema", SCHEMA, replace=True)
     combined_graph.bind("xsd", XSD)
     combined_graph.bind("rdf", RDF)
     for filename in os.listdir(TTL_DIR):

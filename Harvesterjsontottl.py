@@ -1,10 +1,10 @@
-
 import http.client
 import requests
 import json
 import time
 import os
 from datetime import datetime
+from rdflib import Graph, Namespace, Literal, URIRef, BNode, RDF
 
 # ==== Configuration ==== #
 
@@ -15,9 +15,9 @@ OUTPUT_FILE = "output/all_data.ttl"
 os.makedirs(JSON_DIR, exist_ok=True)
 os.makedirs(TTL_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-DELETE_TEMP_TTL = False
-Rows = 1000000 # number of records per chunk
-MAX_CHUNKS = 5 # max count of chunks mostly for testing purposes
+DELETE_TEMP_TTL = True
+Rows = 100 # number of records per chunk
+MAX_CHUNKS = 1 # max count of chunks mostly for testing purposes
 STATE_FILE = "state.json" # state file incase an error occurs
 DELETE_STATE = True # deleting state file after successful run
 GENERATE_TTL = True
@@ -33,36 +33,40 @@ LANGUAGE_MAP = {
     "spa": "es"
 }
 
+# ==== Namespaces ==== #
+CTO = Namespace("https://nfdi4culture.de/ontology#")
+N4C = Namespace("https://nfdi4culture.de/id/")
+NFDICORE = Namespace("https://nfdi.fiz-karlsruhe.de/ontology#")
+RDFS = Namespace("http://www.w3.org/2000/01/rdf-schema#")
+SCHEMA = Namespace("http://schema.org/")
+XSD = Namespace("http://www.w3.org/2001/XMLSchema#")
+RDF = Namespace("http://www.w3.org/1999/02/22-rdf-syntax-ns#")
+
 # ==== Auxiliary function for creating a TTL datafeed element ==== #
-def make_ttl_entry(doc):
+def make_ttl_entry(doc, graph):
     id_ = doc.get("id")
     title = doc.get("paper_title", "").replace('"', "'")
     pub_date = doc.get("publication_date", "1900-01-01T00:00:00Z")[:10]
     lang_code_raw = doc.get("language", ["und"])[0]
     language = LANGUAGE_MAP.get(lang_code_raw, lang_code_raw)
     provider_id = doc.get("provider_ddb_id")
-
-    # extract places
     places = doc.get("place_of_distribution", [])
-    place_str = ""
-    if places:
-        place_literals = ',\n        '.join(f'"{place}"' for place in places)
-        place_str = f'cto:relatedLocationLiteral {place_literals} ;'
 
-    return f"""
-<https://www.deutsche-digitale-bibliothek.de/newspaper/item/{id_}> a cto:DatafeedElement,
-        cto:Item ;
-    rdfs:label "{title}"@de ;
-    schema:url <https://www.deutsche-digitale-bibliothek.de/newspaper/item/{id_}> ;
-    nfdicore:license <https://creativecommons.org/publicdomain/zero/1.0/> ;
-    nfdicore:publisher n4c:E1883 ;
-    schema:sourceOrganization "https://www.deutsche-digitale-bibliothek.de/organization/{provider_id}" ;
-    cto:creationDate "{pub_date}"^^xsd:date ;
-    cto:elementOf n4c:E6349 ;
-    cto:elementType <http://vocab.getty.edu/page/aat/300026656> ;
-    {place_str}
-    schema:inLanguage "{language}" .
-""".strip()
+    item_uri = URIRef(f"https://www.deutsche-digitale-bibliothek.de/newspaper/item/{id_}")
+    graph.add((item_uri, RDF.type, CTO.DatafeedElement))
+    graph.add((item_uri, RDF.type, CTO.Item))
+    graph.add((item_uri, RDFS.label, Literal(title, lang="de")))
+    graph.add((item_uri, SCHEMA.url, URIRef(f"https://www.deutsche-digitale-bibliothek.de/newspaper/item/{id_}")))
+    graph.add((item_uri, NFDICORE.license, URIRef("https://creativecommons.org/publicdomain/zero/1.0/")))
+    graph.add((item_uri, NFDICORE.publisher, N4C["E1883"]))
+    graph.add((item_uri, SCHEMA.sourceOrganization,
+               URIRef(f"https://www.deutsche-digitale-bibliothek.de/organization/{provider_id}")))
+    graph.add((item_uri, CTO.creationDate, Literal(pub_date, datatype=XSD.date)))
+    graph.add((item_uri, CTO.elementOf, N4C["E6349"]))
+    graph.add((item_uri, CTO.elementType, URIRef("http://vocab.getty.edu/page/aat/300026656")))
+    #for place in places:
+    #    graph.add((item_uri, CTO.relatedLocationLiteral, Literal(place)))
+    #graph.add((item_uri, SCHEMA.inLanguage, Literal(language)))
 
 # ==== Auxiliary function for saving the status ==== #
 def save_state(idx, start, all_ids):
@@ -123,12 +127,18 @@ while True:
                     json.dump(data, f, indent=4)
                 print(f"JSON written: {json_chunks_path} ({len(docs)} Records)")
                 if GENERATE_TTL:
+                    graph = Graph()
+                    graph.bind("cto", CTO)
+                    graph.bind("n4c", N4C)
+                    graph.bind("nfdicore", NFDICORE)
+                    graph.bind("rdfs", RDFS)
+                    graph.bind("schema", SCHEMA, replace=True)
+                    graph.bind("xsd", XSD)
+                    for doc in docs:
+                        make_ttl_entry(doc, graph)
+                        all_ids.append(doc.get("id"))
                     ttl_chunk_path = f"{TTL_DIR}/ttl_chunk_{idx}.ttl"
-                    with open(ttl_chunk_path, "w", encoding="utf-8") as f:
-                        for doc in docs:
-                            ttl_entry = make_ttl_entry(doc)
-                            f.write(ttl_entry + "\n\n")
-                            all_ids.append(doc.get("id"))
+                    graph.serialize(destination=ttl_chunk_path, format="turtle")
                     print(f"TTL written: {ttl_chunk_path} ({len(docs)} Records)")
                 start += len(docs)
                 idx += 1
@@ -180,44 +190,37 @@ json_and_ttl_duration = time.time() - json_and_ttl_start
 # ==== Combining ttl files ==== #
 if GENERATE_TTL:
     merge_start = time.time()
-    print("\n Combining all ttl chunks...")
-
-    # Build Header
-    prefixes = """@prefix cto: <https://nfdi4culture.de/ontology#> .
-@prefix n4c: <https://nfdi4culture.de/id/> .
-@prefix nfdicore: <https://nfdi.fiz-karlsruhe.de/ontology#> .
-@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix schema: <http://schema.org/> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n"""
-
-    all_ttl = [prefixes]
-
-    ttl_file_paths = sorted(
-        [os.path.join(TTL_DIR, f) for f in os.listdir(TTL_DIR) if f.startswith("ttl_chunk_") and f.endswith(".ttl")])
-    for filepath in ttl_file_paths:
-        with open(filepath, "r", encoding="utf-8") as f:
-            all_ttl.append(f.read())
-
-
-    # Build closing block
+    print("\nCombining all ttl chunks...")
+    combined_graph = Graph()
+    combined_graph.bind("cto", CTO)
+    combined_graph.bind("n4c", N4C)
+    combined_graph.bind("nfdicore", NFDICORE)
+    combined_graph.bind("rdfs", RDFS)
+    combined_graph.bind("schema", SCHEMA, replace=True)
+    combined_graph.bind("xsd", XSD)
+    combined_graph.bind("rdf", RDF)
+    for filename in os.listdir(TTL_DIR):
+        if filename.startswith("ttl_chunk_") and filename.endswith(".ttl"):
+            filepath = os.path.join(TTL_DIR, filename)
+            combined_graph.parse(filepath, format="turtle")
     today = datetime.now().strftime("%Y-%m-%d")
-    datafeed_items = ",\n        ".join([
-        f"""[ a schema:DataFeedItem ;
-                schema:item <https://www.deutsche-digitale-bibliothek.de/newspaper/item/{id_}> ]"""
-        for id_ in all_ids
-    ])
-    footer = f"""
-    n4c:E6349 a schema:DataFeed ;
-        schema:dataFeedElement {datafeed_items} ;
-        schema:dataModified "{today}"^^xsd:date .
-    """.strip()
-
-    all_ttl.append(footer)
-
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as out:
-        out.write("\n\n".join(all_ttl))
+    datafeed_items = []
+    for id_ in all_ids:
+        datafeed_item = BNode()
+        combined_graph.add((datafeed_item, RDF.type, SCHEMA.DataFeedItem))
+        combined_graph.add(
+            (datafeed_item, SCHEMA.item, URIRef(f"https://www.deutsche-digitale-bibliothek.de/newspaper/item/{id_}")))
+        datafeed_items.append(datafeed_item)
+    combined_graph.add((N4C["E6349"], RDF.type, SCHEMA.DataFeed))
+    combined_graph.add((N4C["E6349"], SCHEMA.dataFeedElement, datafeed_items[0]))
+    for i in range(1, len(datafeed_items)):
+        combined_graph.add((N4C["E6349"], SCHEMA.dataFeedElement, datafeed_items[i]))
+    combined_graph.add((N4C["E6349"], SCHEMA.dateModified, Literal(today, datatype=XSD.date)))
+    combined_graph.serialize(destination=OUTPUT_FILE, format="turtle")
     print(f"Combined: {OUTPUT_FILE}")
     merge_duration = time.time() - merge_start
+else:
+    merge_duration = 0
 
 # ==== Deleting ttl chunks (optional) ==== #
 if DELETE_TEMP_TTL:
