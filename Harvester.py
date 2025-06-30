@@ -144,7 +144,7 @@ while True:
                     graph.serialize(destination=ttl_chunk_path, format="turtle")
                     print(f"TTL written: {ttl_chunk_path} ({len(docs)} Records)")
 
-                    # 🧹 Speicherbereinigung
+                    # Speicherbereinigung
                     del graph
                     gc.collect()
 
